@@ -82,7 +82,13 @@ class ThreadsScraper:
             },
             timeout=20,
         )
+        logger.info("GraphQL %s status=%s body=%r", doc_id, resp.status_code, resp.text[:500])
         resp.raise_for_status()
+        if not resp.text.strip():
+            raise RuntimeError(
+                f"Threads API returned empty response for doc_id={doc_id}. "
+                "The doc_id may have changed or the request was blocked."
+            )
         return resp.json()
 
     def _resolve_user_id(self) -> str:
