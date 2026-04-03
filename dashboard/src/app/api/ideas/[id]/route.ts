@@ -10,8 +10,9 @@ function serverClient() {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const body = await req.json();
   const { status, edited_content, category } = body;
 
@@ -26,7 +27,7 @@ export async function PATCH(
   const { data, error } = await serverClient()
     .from("ideas")
     .update(updates)
-    .eq("id", params.id)
+    .eq("id", id)
     .select()
     .single();
 
