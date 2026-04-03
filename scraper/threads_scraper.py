@@ -54,6 +54,19 @@ class ThreadsScraper:
         # Extract LSD CSRF token
         m = re.search(r'"LSD",\[\],\{"token":"([^"]+)"\}', html)
         self._lsd = m.group(1) if m else "AVqbxe3J_YA"
+        logger.info("LSD token: %s", self._lsd)
+
+        # Try to extract user_id from embedded page data
+        uid_m = re.search(r'"user_id"\s*:\s*"?(\d+)"?', html)
+        if uid_m:
+            self._user_id = uid_m.group(1)
+            logger.info("Extracted user_id from HTML: %s", self._user_id)
+        else:
+            # Try alternate pattern
+            uid_m2 = re.search(r'"pk"\s*:\s*"?(\d+)"?', html)
+            if uid_m2:
+                self._user_id = uid_m2.group(1)
+                logger.info("Extracted user_id (pk) from HTML: %s", self._user_id)
 
         # Update session headers for subsequent API calls
         self.session.headers.update(
@@ -133,7 +146,8 @@ class ThreadsScraper:
           }
         """
         self._load_page()
-        self._user_id = self._resolve_user_id()
+        if not self._user_id:
+            self._user_id = self._resolve_user_id()
         logger.info("Resolved @%s → user_id=%s", self.username, self._user_id)
 
         # Fetch the user's thread feed
