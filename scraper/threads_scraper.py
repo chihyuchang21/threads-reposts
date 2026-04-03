@@ -105,25 +105,25 @@ class ThreadsScraper:
         return resp.json()
 
     def _resolve_user_id(self) -> str:
-        """Resolve username → numeric user ID via GraphQL."""
-        data = self._graphql(
-            doc_id="23996318473300828",
-            variables={
-                "username": self.username,
-                "is_threads_qualified": True,
+        """Resolve username → numeric user ID via REST API."""
+        resp = self.session.get(
+            "https://www.threads.net/api/v1/users/web_profile_info/",
+            params={"username": self.username},
+            headers={
+                "x-ig-app-id": self.APP_ID,
+                "User-Agent": "Instagram 289.0.0.77.109 Android",
             },
+            timeout=20,
         )
+        resp.raise_for_status()
         try:
-            user = (
-                data["data"]
-                ["xdt_api__v1__users__by_username"]
-                ["user"]
-            )
-            return user["pk"]
-        except (KeyError, TypeError) as exc:
+            data = resp.json()
+            user_id = data["data"]["user"]["id"]
+            return str(user_id)
+        except (ValueError, KeyError, TypeError) as exc:
             raise RuntimeError(
                 f"Could not resolve user ID for @{self.username}. "
-                "The Threads API doc_id may have changed."
+                f"Response: {resp.text[:200]}"
             ) from exc
 
     # ------------------------------------------------------------------ #
