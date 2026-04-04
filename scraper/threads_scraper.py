@@ -194,10 +194,11 @@ class ThreadsScraper:
         We split on the time marker pattern and extract the content.
         """
         import re
+        from zoneinfo import ZoneInfo
 
         reposts = []
         seen = set()
-        now = datetime.now(tz=timezone.utc).isoformat()
+        now = datetime.now(tz=ZoneInfo("Asia/Taipei")).isoformat()
 
         # Split on lines and look for blocks: username → time → content
         lines = [l.strip() for l in body_text.splitlines() if l.strip()]

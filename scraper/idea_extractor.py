@@ -54,12 +54,59 @@ def _parse_raw(raw: str) -> list[dict]:
     return json.loads(raw.strip())
 
 
+BATCH_SIZE = 20  # max reposts per API call to stay within output token limit
+
+
+def _extract_chunk(
+    client: anthropic.Anthropic,
+    chunk: list[dict],
+    cat_hint: str,
+) -> list[dict]:
+    """Send one chunk of reposts to Claude and return parsed ideas."""
+    payload = [
+        {"index": i, "author": r["original_author"], "content": r["original_content"]}
+        for i, r in enumerate(chunk)
+    ]
+    user_msg = json.dumps(payload, ensure_ascii=False) + cat_hint
+
+    response = client.messages.create(
+        model=MODEL,
+        max_tokens=8192,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+
+    raw = response.content[0].text.strip()
+
+    try:
+        parsed = _parse_raw(raw)
+    except (json.JSONDecodeError, IndexError):
+        logger.warning("Claude returned non-JSON for chunk of %d, using fallbacks", len(chunk))
+        return [_FALLBACK.copy() for _ in chunk]
+
+    results = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            results.append(_FALLBACK.copy())
+            continue
+        results.append({
+            "content": item.get("idea", ""),
+            "category": item.get("category", "Uncategorized"),
+            "extended_thoughts": item.get("extended_thoughts", []),
+        })
+
+    while len(results) < len(chunk):
+        results.append(_FALLBACK.copy())
+
+    return results
+
+
 def extract_ideas_batch(
     reposts: list[dict],
     existing_categories: Optional[list[str]] = None,
 ) -> list[dict]:
     """
-    Extract ideas from multiple reposts in a single API call.
+    Extract ideas from reposts, chunked to stay within output token limits.
 
     Args:
         reposts: list of dicts with keys original_author, original_content.
@@ -81,44 +128,12 @@ def extract_ideas_batch(
             + ", ".join(existing_categories)
         )
 
-    payload = [
-        {"index": i, "author": r["original_author"], "content": r["original_content"]}
-        for i, r in enumerate(reposts)
-    ]
-    user_msg = json.dumps(payload, ensure_ascii=False) + cat_hint
+    chunks = [reposts[i:i + BATCH_SIZE] for i in range(0, len(reposts), BATCH_SIZE)]
+    all_results: list[dict] = []
 
-    # Scale max_tokens with batch size: ~400 tokens output per repost
-    max_tokens = min(max(1024, len(reposts) * 400), 8192)
+    for idx, chunk in enumerate(chunks):
+        logger.info("Extracting ideas: chunk %d/%d (%d reposts)", idx + 1, len(chunks), len(chunk))
+        all_results.extend(_extract_chunk(client, chunk, cat_hint))
 
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=max_tokens,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-
-    raw = response.content[0].text.strip()
-
-    try:
-        parsed = _parse_raw(raw)
-    except (json.JSONDecodeError, IndexError):
-        logger.warning("Claude returned non-JSON for batch, falling back to empty ideas")
-        return [_FALLBACK.copy() for _ in reposts]
-
-    results = []
-    for i, item in enumerate(parsed):
-        if not isinstance(item, dict):
-            results.append(_FALLBACK.copy())
-            continue
-        results.append({
-            "content": item.get("idea", ""),
-            "category": item.get("category", "Uncategorized"),
-            "extended_thoughts": item.get("extended_thoughts", []),
-        })
-
-    # Pad if Claude returned fewer items than expected
-    while len(results) < len(reposts):
-        results.append(_FALLBACK.copy())
-
-    logger.info("Batch extracted %d ideas in 1 API call", len(results))
-    return results
+    logger.info("Batch extracted %d ideas in %d API call(s)", len(all_results), len(chunks))
+    return all_results
