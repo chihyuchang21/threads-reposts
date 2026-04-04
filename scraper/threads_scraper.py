@@ -10,6 +10,7 @@ for the latest doc_ids.
 """
 
 import json
+import os
 import re
 import time
 import logging
@@ -24,11 +25,13 @@ class ThreadsScraper:
     GRAPHQL_URL = "https://www.threads.net/api/graphql"
     APP_ID = "238260118697367"
 
-    def __init__(self, username: str):
+    def __init__(self, username: str, user_id: str | None = None):
         self.username = username.lstrip("@")
         self.session = requests.Session()
         self._lsd: str | None = None
-        self._user_id: str | None = None
+        # Accept a pre-resolved user_id to skip the lookup API entirely.
+        # Set THREADS_USER_ID env var or pass directly to avoid 429s on CI.
+        self._user_id: str | None = user_id or os.environ.get("THREADS_USER_ID")
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -145,9 +148,13 @@ class ThreadsScraper:
             "reposted_at":      str (ISO-8601),
           }
         """
-        self._load_page()
-        if not self._user_id:
-            self._user_id = self._resolve_user_id()
+        if self._user_id:
+            logger.info("Using pre-configured user_id=%s for @%s", self._user_id, self.username)
+            self._load_page()  # still needed for LSD token
+        else:
+            self._load_page()
+            if not self._user_id:
+                self._user_id = self._resolve_user_id()
         logger.info("Resolved @%s → user_id=%s", self.username, self._user_id)
 
         # Fetch the user's thread feed
