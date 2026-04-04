@@ -99,13 +99,13 @@ class ThreadsScraper:
 
             page.on("response", handle_response)
 
-            logger.info("Loading profile for @%s", self.username)
+            logger.info("Loading reposts page for @%s", self.username)
             page.goto(
-                f"https://www.threads.com/@{self.username}",
+                f"https://www.threads.com/@{self.username}/reposts",
                 wait_until="networkidle",
                 timeout=30000,
             )
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(3000)
 
             body_text = page.locator("body").inner_text()
             logger.info("Page preview: %s", body_text[:300].replace("\n", " "))
