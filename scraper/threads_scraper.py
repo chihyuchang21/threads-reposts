@@ -123,14 +123,15 @@ class ThreadsScraper:
                 body_text = page.locator("body").inner_text()
                 accumulated_texts.append(body_text)
 
-                page.evaluate("window.scrollBy(0, 1200)")
-                delay = random.randint(1500, 3500)
+                # Scroll to the very bottom to reliably trigger lazy-loading
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                delay = random.randint(2000, 4000)
                 page.wait_for_timeout(delay)
 
                 new_height = page.evaluate("document.body.scrollHeight")
                 if new_height == prev_height:
                     no_new_count += 1
-                    if no_new_count >= 3:  # stop only after 3 consecutive no-growth scrolls
+                    if no_new_count >= 3:
                         break
                 else:
                     no_new_count = 0
