@@ -18,6 +18,8 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
+import random
+
 from playwright.sync_api import sync_playwright
 
 logger = logging.getLogger(__name__)
@@ -102,17 +104,21 @@ class ThreadsScraper:
             logger.info("Loading reposts page for @%s", self.username)
             page.goto(
                 f"https://www.threads.com/@{self.username}/reposts",
-                wait_until="networkidle",
-                timeout=30000,
+                wait_until="domcontentloaded",
+                timeout=60000,
             )
-            page.wait_for_timeout(3000)
+            # Longer initial wait for first-run to let page fully settle
+            initial_wait = 5000 if max_scrolls > 10 else 3000
+            page.wait_for_timeout(initial_wait)
 
             # Scroll down to trigger lazy-loading of reposts.
+            # Random jitter between scrolls to avoid rate limiting.
             # Stop early if page height stops growing (no more content).
             prev_height = 0
             for _ in range(max_scrolls):
                 page.evaluate("window.scrollBy(0, 1200)")
-                page.wait_for_timeout(1500)
+                delay = random.randint(1500, 3500)
+                page.wait_for_timeout(delay)
                 new_height = page.evaluate("document.body.scrollHeight")
                 if new_height == prev_height:
                     break
