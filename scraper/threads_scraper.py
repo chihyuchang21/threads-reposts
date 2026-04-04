@@ -27,7 +27,7 @@ class ThreadsScraper:
     def __init__(self, username: str, user_id: Optional[str] = None):
         self.username = username.lstrip("@")
 
-    def get_reposts(self, max_count: int = 50) -> list[dict]:
+    def get_reposts(self, max_count: int = 50, max_scrolls: int = 5) -> list[dict]:
         """
         Return recent reposts from the user's Threads profile.
 
@@ -107,10 +107,16 @@ class ThreadsScraper:
             )
             page.wait_for_timeout(3000)
 
-            # Scroll down to trigger lazy-loading of reposts
-            for _ in range(5):
+            # Scroll down to trigger lazy-loading of reposts.
+            # Stop early if page height stops growing (no more content).
+            prev_height = 0
+            for _ in range(max_scrolls):
                 page.evaluate("window.scrollBy(0, 1200)")
                 page.wait_for_timeout(1500)
+                new_height = page.evaluate("document.body.scrollHeight")
+                if new_height == prev_height:
+                    break
+                prev_height = new_height
 
             body_text = page.locator("body").inner_text()
             logger.info("Page preview: %s", body_text[:300].replace("\n", " "))
