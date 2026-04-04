@@ -100,10 +100,17 @@ class ThreadsScraper:
         )
         logger.info("GraphQL %s status=%s body=%r", doc_id, resp.status_code, resp.text[:500])
         resp.raise_for_status()
-        if not resp.text.strip():
+        body = resp.text.strip()
+        if not body:
             raise RuntimeError(
                 f"Threads API returned empty response for doc_id={doc_id}. "
                 "The doc_id may have changed or the request was blocked."
+            )
+        if body.startswith("<!"):
+            raise RuntimeError(
+                f"Threads API returned HTML instead of JSON for doc_id={doc_id}. "
+                "The doc_id has likely changed or authentication is required. "
+                f"HTML snippet: {body[:200]}"
             )
         return resp.json()
 
@@ -159,7 +166,7 @@ class ThreadsScraper:
 
         # Fetch the user's thread feed
         data = self._graphql(
-            doc_id="7357891684304218",  # get_user_threads
+            doc_id="6232751443445612",  # get_user_threads (updated 2026-04)
             variables={
                 "userID": self._user_id,
                 "count": max_count,
