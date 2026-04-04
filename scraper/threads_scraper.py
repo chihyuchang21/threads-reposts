@@ -111,27 +111,42 @@ class ThreadsScraper:
             initial_wait = 5000 if max_scrolls > 10 else 3000
             page.wait_for_timeout(initial_wait)
 
-            # Scroll down to trigger lazy-loading of reposts.
-            # Random jitter between scrolls to avoid rate limiting.
-            # Stop early if page height stops growing (no more content).
+            # Threads uses a virtualised list — DOM nodes are recycled as you
+            # scroll, so a single inner_text() at the end only captures the
+            # last visible window.  Collect text after every scroll and
+            # accumulate unique posts across all windows.
+            accumulated_texts: list[str] = []
             prev_height = 0
+            no_new_count = 0
+
             for _ in range(max_scrolls):
+                body_text = page.locator("body").inner_text()
+                accumulated_texts.append(body_text)
+
                 page.evaluate("window.scrollBy(0, 1200)")
                 delay = random.randint(1500, 3500)
                 page.wait_for_timeout(delay)
+
                 new_height = page.evaluate("document.body.scrollHeight")
                 if new_height == prev_height:
-                    break
+                    no_new_count += 1
+                    if no_new_count >= 3:  # stop only after 3 consecutive no-growth scrolls
+                        break
+                else:
+                    no_new_count = 0
                 prev_height = new_height
 
-            body_text = page.locator("body").inner_text()
-            logger.info("Page preview: %s", body_text[:300].replace("\n", " "))
-            logger.info("Logged in: %s", "Log in" not in body_text)
+            # One final capture after last scroll
+            accumulated_texts.append(page.locator("body").inner_text())
+
+            first_text = accumulated_texts[0] if accumulated_texts else ""
+            logger.info("Page preview: %s", first_text[:300].replace("\n", " "))
+            logger.info("Logged in: %s", "Log in" not in first_text)
 
             # If GraphQL didn't fire, fall back to body text parsing
             if not captured:
-                logger.info("No GraphQL data intercepted, trying body text parse")
-                reposts = self._parse_body_text(body_text)
+                logger.info("No GraphQL data intercepted, trying incremental body text parse")
+                reposts = self._parse_accumulated_texts(accumulated_texts)
                 browser.close()
                 return reposts[:max_count]
 
@@ -228,3 +243,23 @@ class ThreadsScraper:
 
         logger.info("Body text parse found %d reposts", len(reposts))
         return reposts
+
+    def _parse_accumulated_texts(self, texts: list[str]) -> list[dict]:
+        """
+        Parse reposts from multiple body text snapshots taken during scrolling.
+        Threads virtualises its list, so each snapshot only shows a window of
+        posts.  Merging all snapshots gives the full history.
+        """
+        seen_content: set[str] = set()
+        all_reposts: list[dict] = []
+
+        for text in texts:
+            for repost in self._parse_body_text(text):
+                content = repost["original_content"]
+                if content not in seen_content:
+                    seen_content.add(content)
+                    all_reposts.append(repost)
+
+        logger.info("Incremental parse found %d unique reposts across %d snapshots",
+                    len(all_reposts), len(texts))
+        return all_reposts
