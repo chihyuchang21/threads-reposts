@@ -107,14 +107,19 @@ class ThreadsScraper:
             )
             page.wait_for_timeout(3000)
 
+            # Scroll down to trigger lazy-loading of reposts
+            for _ in range(5):
+                page.evaluate("window.scrollBy(0, 1200)")
+                page.wait_for_timeout(1500)
+
             body_text = page.locator("body").inner_text()
             logger.info("Page preview: %s", body_text[:300].replace("\n", " "))
             logger.info("Logged in: %s", "Log in" not in body_text)
 
-            # If GraphQL didn't fire, try scraping rendered DOM as fallback
+            # If GraphQL didn't fire, fall back to body text parsing
             if not captured:
-                logger.info("No GraphQL data intercepted, trying DOM scrape")
-                reposts = self._scrape_dom(page)
+                logger.info("No GraphQL data intercepted, trying body text parse")
+                reposts = self._parse_body_text(body_text)
                 browser.close()
                 return reposts[:max_count]
 
@@ -148,31 +153,66 @@ class ThreadsScraper:
         logger.info("Found %d reposts for @%s", len(reposts), self.username)
         return reposts[:max_count]
 
-    def _scrape_dom(self, page) -> list[dict]:
-        """Fallback: extract repost text from rendered DOM."""
-        reposts = []
-        try:
-            # Wait for content to load
-            page.wait_for_selector("div[class*='x1a2a7pz']", timeout=5000)
-        except Exception:
-            pass
+    def _parse_body_text(self, body_text: str) -> list[dict]:
+        """
+        Fallback: parse reposts from the page's inner_text().
 
-        # Look for post text elements
-        elements = page.locator("div[dir='auto'] span").all()
+        Threads renders post text as lines. Each post block looks like:
+            username
+            · Xh  (or Xm, Xd)
+            post content...
+            (optional: N replies, N reposts, N likes)
+
+        We split on the time marker pattern and extract the content.
+        """
+        import re
+
+        reposts = []
         seen = set()
-        for el in elements:
-            try:
-                text = el.inner_text().strip()
-                if len(text) > 20 and text not in seen:
+        now = datetime.now(tz=timezone.utc).isoformat()
+
+        # Split on lines and look for blocks: username → time → content
+        lines = [l.strip() for l in body_text.splitlines() if l.strip()]
+
+        # Time pattern: "· 5m", "· 2h", "· 3d", "56m", "2h", "3d"
+        time_re = re.compile(r'^·?\s*\d+[smhdw]$')
+
+        i = 0
+        while i < len(lines):
+            # Look for a time marker
+            if time_re.match(lines[i]):
+                # Author is the line before the time marker
+                author = lines[i - 1] if i > 0 else "unknown"
+                # Content starts after the time marker
+                content_lines = []
+                j = i + 1
+                while j < len(lines):
+                    # Stop at next time marker (next post)
+                    if time_re.match(lines[j]):
+                        break
+                    # Stop at engagement metrics
+                    if re.match(r'^\d+ (replies?|reposts?|likes?|quotes?)$', lines[j]):
+                        j += 1
+                        continue
+                    content_lines.append(lines[j])
+                    j += 1
+
+                text = " ".join(content_lines).strip()
+                if (
+                    len(text) > 20
+                    and text not in seen
+                    and author.lower() != self.username.lower()
+                ):
                     seen.add(text)
                     reposts.append({
-                        "threads_post_id": str(hash(text)),
-                        "original_author": "unknown",
+                        "threads_post_id": str(abs(hash(text))),
+                        "original_author": author,
                         "original_content": text,
-                        "reposted_at": datetime.now(tz=timezone.utc).isoformat(),
+                        "reposted_at": now,
                     })
-            except Exception:
-                pass
+                i = j
+            else:
+                i += 1
 
-        logger.info("DOM fallback found %d text elements", len(reposts))
+        logger.info("Body text parse found %d reposts", len(reposts))
         return reposts
