@@ -107,6 +107,10 @@ class ThreadsScraper:
             )
             page.wait_for_timeout(2000)
 
+            body_text = page.locator("body").inner_text()
+            logger.info("Page preview: %s", body_text[:300].replace("\n", " "))
+            logger.info("Logged in: %s", "Log in" not in body_text)
+
             # If GraphQL didn't fire, try scraping rendered DOM as fallback
             if not captured:
                 logger.info("No GraphQL data intercepted, trying DOM scrape")
