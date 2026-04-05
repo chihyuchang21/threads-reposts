@@ -23,16 +23,20 @@ SYSTEM_PROMPT = """\
 You are a personal knowledge curator. The user reposts content on Threads
 to capture ideas that resonate with them.
 
-You will receive a JSON array of reposts. For EACH item, extract the core idea
-in 1-3 concise sentences, suggest a category, and generate 2-3 thought-provoking
-follow-up questions that help the user think deeper.
+You will receive a JSON array of reposts. For EACH item:
+- Extract the core idea in 1-3 concise sentences IN ENGLISH (idea_en)
+- Translate that same idea into Traditional Chinese (idea_zh)
+- Suggest ONE short category label IN ENGLISH ONLY (e.g. Career, Psychology, Tech, Productivity, Gender, Relationships, Learning, Life Philosophy, AI Tools, Design)
+- Generate 2-3 thought-provoking follow-up questions IN ENGLISH
 
-Respond ONLY with a valid JSON array where each element corresponds to the input
-at the same index, in this exact shape:
+Respond ONLY with a valid JSON array. Each element MUST include the original
+"index" from the input so results can be matched back correctly:
 [
   {
-    "idea": "<core idea in 1-3 sentences>",
-    "category": "<one short category label, e.g. 設計思維 / Tech / 心理學 / 創業 / 生活哲學>",
+    "index": 0,
+    "idea_en": "<core idea in English, 1-3 sentences>",
+    "idea_zh": "<same idea in Traditional Chinese, 1-3 sentences>",
+    "category": "<one short English category label>",
     "extended_thoughts": ["<question 1>", "<question 2>", "<question 3>"]
   },
   ...
@@ -41,6 +45,7 @@ at the same index, in this exact shape:
 
 _FALLBACK = {
     "content": "",
+    "content_zh": "",
     "category": "Uncategorized",
     "extended_thoughts": [],
 }
@@ -84,19 +89,27 @@ def _extract_chunk(
         logger.warning("Claude returned non-JSON for chunk of %d, using fallbacks", len(chunk))
         return [_FALLBACK.copy() for _ in chunk]
 
-    results = []
+    # Build a lookup by index so we handle missing or reordered items safely
+    by_index: dict[int, dict] = {}
     for item in parsed:
         if not isinstance(item, dict):
+            continue
+        idx = item.get("index")
+        if isinstance(idx, int):
+            by_index[idx] = item
+
+    results = []
+    for i in range(len(chunk)):
+        item = by_index.get(i)
+        if not item:
             results.append(_FALLBACK.copy())
             continue
         results.append({
-            "content": item.get("idea", ""),
+            "content": item.get("idea_en", ""),
+            "content_zh": item.get("idea_zh", ""),
             "category": item.get("category", "Uncategorized"),
             "extended_thoughts": item.get("extended_thoughts", []),
         })
-
-    while len(results) < len(chunk):
-        results.append(_FALLBACK.copy())
 
     return results
 

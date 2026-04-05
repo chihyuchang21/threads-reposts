@@ -1,13 +1,15 @@
 """Supabase database operations."""
+from __future__ import annotations
 
 import logging
 import os
+from typing import Optional
 
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
-_client: Client | None = None
+_client: Optional[Client] = None
 
 
 def get_client() -> Client:
@@ -73,6 +75,7 @@ def save_repost_and_idea(
         {
             "repost_id": repost_id,
             "content": idea["content"],
+            "content_zh": idea.get("content_zh", ""),
             "category": idea["category"],
             "extended_thoughts": idea["extended_thoughts"],
             "status": "pending",

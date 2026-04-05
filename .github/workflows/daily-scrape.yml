@@ -2,8 +2,8 @@ name: Daily Threads Scrape
 
 on:
   schedule:
-    # 每天台灣時間 09:00 執行 (UTC+8 → UTC 01:00)
-    - cron: "0 1 * * *"
+    # 每週六台灣時間 07:00 執行 (UTC+8 → UTC 週五 23:00)
+    - cron: "0 23 * * 5"
   workflow_dispatch: # 允許手動觸發
 
 jobs:
